@@ -42,12 +42,27 @@ interface IERC721 {
 contract Meow is ERC20, Ownable {
     IERC721 NFT;
     uint256 seed;
-    uint256 public gamePrice = 0.01 ether;
+    uint256 public gamePrice = 10;
     uint256 public waitingId = 0;
+    uint256 public firstrandom = 0;
+    uint256 public secondrandom = 0;
     uint256 private waitingNumber;
     address public teamAddress;
     uint256 public jackpotAmount = 0;
+    uint256 public tmpgamePrice;
     address[] private stakers;
+    bool public big;
+
+    struct Room {
+        address[] fighters;
+        uint256 random1;
+        uint256 random2;
+        uint256 tokenid1;
+        uint256 tokenid2;
+        bool big;
+    }
+
+    mapping(uint256 => Room) public room;
     mapping(address => uint256) public stakeAmount;
     uint256 public stakeTotal;
 
@@ -97,20 +112,70 @@ contract Meow is ERC20, Ownable {
         stakeTotal -= amount;
     }
 
-    function joinLobby(uint256 tokenId) external payable {
+    function joinBigLobby(
+        uint256 tokenId,
+        uint256 roomnum
+    ) external payable {
         require(waitingId != tokenId, "ALEADY_IN_LOBBY");
         require(NFT.ownerOf(tokenId) == _msgSender(), "NOT_OWNER");
-        require(gamePrice == msg.value, "Amount doesn't equal msg.value");
-
-        if (waitingId == 0) {
+        require(
+            gamePrice == msg.value || gamePrice.mul(5) == msg.value,
+            "Amount doesn't equal msg.value"
+        );
+        big = true;
+        if (room[roomnum].tokenid1 == 0) {
+            room[roomnum].tokenid1 = tokenId;
             waitingId = tokenId;
-            waitingNumber = getRandomNumber();
+            if (msg.value == gamePrice.mul(5)) {
+                big = false;
+                for (int i = 0; i < 5; i++) {
+                    uint256 tmp = getRandomNumber();
+                    firstrandom = firstrandom > tmp ? firstrandom : tmp;
+                }
+            } else {
+                firstrandom = getRandomNumber();
+            }
+            room[roomnum].big = big;
+            room[roomnum].random1 = firstrandom;
+            room[roomnum].fighters.push(msg.sender);
         } else {
+            room[roomnum].tokenid2 = tokenId;
+            if (msg.value == gamePrice.mul(5)) {
+                big = false;
+                for (int i = 0; i < 5; i++) {
+                    uint256 tmp = getRandomNumber();
+                    secondrandom = secondrandom > tmp ? secondrandom : tmp;
+                }
+            } else {
+                secondrandom = getRandomNumber();
+            }
+            room[roomnum].random2 = secondrandom;
+            room[roomnum].fighters.push(msg.sender);
             startGame(tokenId);
             emit GameStarted(waitingId, tokenId);
             waitingId = 0;
         }
     }
+
+    // function joinLobby(
+    //     uint256 tokenId,
+    //     bool big,
+    //     uint256 roomnum
+    // ) internal {
+    //     if (waitingId == 0) {
+    //         waitingId = tokenId;
+    //         if (big) {
+    //             waitingNumber = getRandomNumber();
+    //         } else {
+    //             waitingNumber = getRandomNumber();
+    //             if (firstrandom > waitingNumber) waitingNumber = firstrandom;
+    //         }
+    //     } else {
+    //         startGame(tokenId);
+    //         emit GameStarted(waitingId, tokenId);
+    //         waitingId = 0;
+    //     }
+    // }
 
     function leaveLobby(uint256 tokenId) external {
         require(NFT.ownerOf(tokenId) == _msgSender(), "NOT_OWNER");
@@ -120,25 +185,26 @@ contract Meow is ERC20, Ownable {
 
     function startGame(uint256 tokenId) internal {
         // start game
-        uint256 nextNumber = getRandomNumber();
+        uint256 nextNumber = secondrandom;
         address waitingAddress = NFT.ownerOf(waitingId);
         address oppositeAddress = NFT.ownerOf(tokenId);
         _mint(waitingAddress, 1);
         _mint(oppositeAddress, 1);
-
+        if(!big) tmpgamePrice = gamePrice.mul(5);
+        else tmpgamePrice = gamePrice;
         if (waitingNumber == nextNumber) {
-            sendPrice(waitingAddress, gamePrice);
-            sendPrice(oppositeAddress, gamePrice);
+            sendPrice(waitingAddress, tmpgamePrice);
+            sendPrice(oppositeAddress, tmpgamePrice);
         } else {
             if (waitingNumber > nextNumber) {
-                sendPrice(waitingAddress, gamePrice);
+                sendPrice(waitingAddress, tmpgamePrice);
                 NFT.transferFrom(oppositeAddress, waitingAddress, tokenId);
             } else {
-                sendPrice(oppositeAddress, gamePrice);
+                sendPrice(oppositeAddress, tmpgamePrice);
                 NFT.transferFrom(waitingAddress, oppositeAddress, waitingId);
             }
-            sendPrice(teamAddress, 1 ether);
-            jackpotAmount += 9 ether;
+            sendPrice(teamAddress, tmpgamePrice.mul(2).div(10));
+            jackpotAmount += tmpgamePrice.mul(8).div(10);
         }
 
         if (waitingNumber == 77777)
@@ -156,7 +222,7 @@ contract Meow is ERC20, Ownable {
             sendPrice(rolled, jackpotAmount.mul(3).div(10));
             sendPrice(other, jackpotAmount.mul(3).div(10));
         } else {
-            sendPrice(rolled, jackpotAmount.mul(5).div(10));
+            sendPrice(rolled, jackpotAmount.mul(4).div(10));
             sendPrice(other, jackpotAmount.mul(1).div(10));
         }
         distributeToStakers();
@@ -200,4 +266,3 @@ contract Meow is ERC20, Ownable {
         NFT = IERC721(newNftAddress);
     }
 }
-
